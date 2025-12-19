@@ -12,12 +12,31 @@ class PlaceFieldRemappingRandom(BaseModel):
                 self.container["pat_idx"].append(misc)
                 self.container["pat_start_idx"].append(i)
 
-    def PP_generation(self, i, context):
-        if context:
-            self.dSpikes = self.rng.random(self.num_neurons) < self.neuron_params['p_1']
+    def PP_generation(self, i, kind, context):
 
-        else:
-            self.dSpikes = self.rng.random(self.num_neurons) < self.neuron_params['p_0']
+        if kind == 'random':
+            if context:
+                self.dSpikes = self.rng.random(self.num_neurons) < self.neuron_params['p_1']
+
+            else:
+                self.dSpikes = self.rng.random(self.num_neurons) < self.neuron_params['p_0']
+        if kind == 'dSpike': 
+            if context:
+                self.dSpikes = (
+                    self.rng.random(self.num_neurons)
+                    < self.accelerometer 
+                    * self.neuron_params["r_1"]
+                    * 1e-3
+                    * self.sim_params["dt"]
+                )
+            else:
+                self.dSpikes = (
+                    self.rng.random(self.num_neurons)
+                    < self.accelerometer 
+                    * self.neuron_params["r_0"]
+                    * 1e-3
+                    * self.sim_params["dt"]
+                )
 
     def time_steps(self):
         
@@ -106,9 +125,20 @@ if __name__ == "__main__":
     results = []
     sorting = []
 
-    p_1s = [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
+    d = 0.2
 
-    for p_1 in p_1s:
+   #exps = np.arange(-6, -1 + d, d)[::-1]
+    exps = np.arange(-4, 1 + d, d)[::-1]
+
+    kind = 'random'
+    kind = 'dSpike'
+
+
+
+    p_1s = 10 ** exps 
+
+    for i, p_1 in enumerate(p_1s):
+        print(f'{i+1} of {len(p_1s)}')
     
         rng = np.random.default_rng()
 
@@ -131,8 +161,10 @@ if __name__ == "__main__":
             "w_prox_max": 0.2,
             "w_prox_min": 0.0,
             "theta": 1,
-            "p_0": 0.0004,
-            "p_1": p_1,
+            #"p_0": 0.0004,
+            #"p_1": p_1,
+            "r_0": 1e-3,
+            "r_1": p_1 * 1e3,
             'w_sum': 2,
             'delta_w': 0.05,
         }
@@ -196,14 +228,17 @@ if __name__ == "__main__":
 
         repititions = []
         state, traces = neuron.run(
-            learning=False, state=state, recording=True, context_args={'context': False}
+            learning=False, state=state, recording=True, 
+            context_args={'context': False, 'kind': kind}
         )
 
         state, t1 = neuron.run(
-            learning=True, state=state, recording=True, context_args={'context': True}
+            learning=True, state=state, recording=True,
+            context_args={'context': True, 'kind': kind}
         )
         state, traces = neuron.run(
-            learning=False, state=state, recording=True, context_args={'context': False}
+            learning=False, state=state, recording=True,
+            context_args={'context': False, 'kind': kind}
         )
 
         
@@ -238,7 +273,7 @@ if __name__ == "__main__":
 
         axes.set_ylabel('Neurons')
 
-        plt.savefig(f"mapping_comp/random_{p_1}.png")
+        plt.savefig(f"mapping_comp/{kind}_{p_1}.png")
 
-    np.save('mapping_comp/results_random.npy', results)
-    np.save('mapping_comp/soting_random.npy', sorting)
+    np.save(f'mapping_comp/results_{kind}.npy', results)
+    np.save(f'mapping_comp/soting_{kind}.npy', sorting)
