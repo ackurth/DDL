@@ -3,7 +3,80 @@ from tqdm import tqdm
 from matplotlib import pyplot as plt
 import pickle
 from base_model import BaseModel
-from place_field_formation import PlaceFieldFormation
+
+class PlaceFieldFormation(BaseModel):
+
+    def process_misc(self, misc, i):
+
+        if self.learning:
+            tau = 40000
+            self.w_prox = ((1 - self.sim_params['dt'] / tau) * self.w_prox
+                           + self.neuron_params['w_sum'] / self.num_inp / tau
+                           + self.rng.normal(0, self.neuron_params['w_sum'] / self.num_inp / 2) / tau)
+            self.w_prox[self.w_prox < 0] = 0
+
+        if self.recording and misc is not None:
+            self.container["pat_idx"].append(misc)
+            self.container["pat_start_idx"].append(i)
+    
+    def PP_generation(self, i, context):
+
+        timer_mask = self.cross_low < self.cross_high
+        self.mask_cross_low[timer_mask] = False
+        self.mask_cross_high[timer_mask] = False
+
+        delta_t = self.cross_high[timer_mask] - self.cross_low[timer_mask]
+        self.cross_low[timer_mask] = 0
+        self.cross_high[timer_mask] = 0
+
+        dSpike_prob = np.zeros(self.num_neurons)
+        dSpike_prob[timer_mask] = np.exp(- delta_t / 1000)
+        #dSpike_prob[timer_mask] = 0
+
+        random_ind_prob = (
+            self.neuron_params['p_dSpike']
+            * 1e-3
+            * self.sim_params["dt"]
+        )
+
+        self.PPs =(
+            self.rng.random(self.num_neurons)
+            < dSpike_prob + int(context) * random_ind_prob
+            )
+
+    def time_steps(self):
+        
+        stim_width = self.sim_params['stim_dur'] / self.sim_params['dt']
+        return int(stim_width * self.sim_params["num_pats"])
+
+    def input(self):
+
+        # Generate input stream
+        stim_width = self.sim_params['stim_dur'] / self.sim_params['dt']
+        time_steps = int(stim_width * self.sim_params["num_pats"])
+        
+        pat_id = -1
+        
+        i = 0
+        for i in range(time_steps):
+            
+            if i % stim_width == 0:
+                pat_id += 1
+                pat = pat_id
+            else:
+                pat = None
+            
+            p_rand_prox = (
+                (
+                    self.sim_params["mean_rate_prox"]
+                    * np.ones_like(self.num_inp)
+                    + self.sim_params["input_rate"] * self.input_neurons[pat_id]
+                )
+                * self.sim_params["dt"]
+                * 1e-3
+            )
+
+            yield (i, p_rand_prox, pat)
 
     
 def full_activity(rep_id, repititions):
@@ -61,10 +134,10 @@ if __name__ == "__main__":
         "w_prox_min": 0.0,
         "theta": 1,
         "r_PP": 3,
-        "p_dSpike": 1 / 30,
+        "p_dSpike": 1 / 25,
         'w_sum': 2,
         'delta_w': 0.005,
-        'dSpike_thres_high': 0.6,
+        'dSpike_thres_high': 0.3,
         'dSpike_thres_low': 0.2
     }
     sim_params = {
@@ -125,7 +198,7 @@ if __name__ == "__main__":
 
     repititions = []
 
-    nums = 10
+    nums = 5
 
     for i in range(nums):
 
@@ -136,9 +209,13 @@ if __name__ == "__main__":
             state, t1 = neuron.run(
                 learning=True, state=state, recording=True, context_args={'context': True}
             )
-        state, traces = neuron.run(
-            learning=True, state=state, recording=True, context_args={'context': False}
-        )
+            state, traces = neuron.run(
+                learning=False, state=state, recording=True, context_args={'context': False}
+            )
+        else:
+            state, traces = neuron.run(
+                learning=True, state=state, recording=True, context_args={'context': False}
+            )
 
         traces['w_prox'] = state['w_prox'].copy()
 
@@ -176,18 +253,18 @@ if __name__ == "__main__":
     for rep_id in range(nums):
         full_activity(rep_id, repititions)
 
-        plt.savefig(f'place_field_formation/full_{rep_id}.png')
+        plt.savefig(f'place_field_consolidation/full_{rep_id}.png')
         plt.close()
         
     #rep_id = 5
     #full_activity(rep_id, repititions)
 
-    #plt.savefig(f'place_field_formation/full_{rep_id}.png')
+    #plt.savefig(f'place_field_consolidation/full_{rep_id}.png')
     #
     #rep_id = 9
     #full_activity(rep_id, repititions)
 
-    #plt.savefig(f'place_field_formation/full_{rep_id}.png')
+    #plt.savefig(f'place_field_consolidation/full_{rep_id}.png')
 
     vmax = 50
 
@@ -201,10 +278,11 @@ if __name__ == "__main__":
                 axes[i, j].imshow(results[i].T[sorting[j]], vmin=0, vmax=vmax)
 
 
-    plt.savefig("place_field_formation/consolitdation.png")
+    plt.savefig("place_field_consolidation/consolitdation.png")
 
     import IPython
     IPython.embed()
+    quit()
 
     repititions = []
     for i in range(2):
@@ -260,4 +338,4 @@ if __name__ == "__main__":
 
     axes[0, 1].remove()
 
-    plt.savefig("place_field_formation/remapping.png")
+    plt.savefig("place_field_consolidation/remapping.png")

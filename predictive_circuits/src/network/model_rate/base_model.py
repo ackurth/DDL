@@ -64,17 +64,26 @@ class BaseModel:
         self.IS_2 = state.get("IS_2", np.zeros(self.num_neurons))
 
         # Fetch of alternative initialize proximal feedforward and recurrent weights
+
         self.w_prox = state.get(
             "w_prox",
             (
-                np.abs(
-                    self.rng.standard_normal(
-                        size=(self.num_neurons, self.num_inp)
-                    )
-                )
-                / self.num_inp
+                #np.abs(
+                #    self.rng.standard_normal(
+                #        size=(self.num_neurons, self.num_inp)
+                #    )
+                #)
+                #/ self.num_inp
+
+                self.rng.normal(self.neuron_params['w_sum'] / self.num_inp,
+                                self.neuron_params['w_sum'] / self.num_inp / 2,
+                                size=(self.num_neurons, self.num_inp)
+                                )
+
+
             ),
         )
+        self.w_prox[self.w_prox < 0] = 0
         self.w_prox /= self.w_prox.sum(axis=1)[:, np.newaxis] / self.neuron_params['w_sum']
 
     def generate_container(self, time_steps):
