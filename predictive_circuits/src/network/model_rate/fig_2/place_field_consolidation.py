@@ -12,6 +12,40 @@ class PlaceFieldFormation(BaseModel):
             self.container["pat_idx"].append(misc)
             self.container["pat_start_idx"].append(i)
 
+    def create_inputs(self, len_stim=200, min_shift=5):
+    
+        receptive_field = lambda x, mu, sigma: np.exp(-((x - mu) ** 2) / 2 / sigma**2)
+
+        steps = num_inputs // min_shift
+
+        inp_space = np.linspace(0, len_stim - 1, len_stim)
+        inp = receptive_field(inp_space, len_stim // 2, len_stim // 10)
+
+        self.sim_params["num_pats"] = steps
+
+        self.input_neurons = np.zeros(
+            (self.sim_params["num_pats"], self.num_inp)
+        )
+
+        for i in range(steps):
+
+            if len_stim + min_shift * i < num_inputs:
+                self.input_neurons[i][
+                    min_shift * i : len_stim + min_shift * i
+                ] = inp
+            else:
+                wrapped_idx = (len_stim + min_shift * i) % num_inputs
+                self.input_neurons[i][min_shift * i : -1] = inp[
+                    : num_inputs - min_shift * i - 1
+                ]
+                self.input_neurons[i][:wrapped_idx] = inp[
+                    num_inputs - min_shift * i - 1 : -1
+                ]
+
+        self.input_neurons = np.roll(self.input_neurons, axis=1, shift=-len_stim // 2)
+
+        return steps
+
     def run_passive(self, state, timesteps=0):
 
         w_prox = state['w_prox'].copy()
@@ -41,14 +75,7 @@ class PlaceFieldFormation(BaseModel):
         self.cross_high[timer_mask] = 0
 
         dSpike_prob = np.zeros(self.num_neurons)
-        dSpike_prob[timer_mask] = np.exp(- delta_t / 1000)
-        #dSpike_prob[timer_mask] = 0
-
-        #random_ind_prob = (
-        #    self.neuron_params['p_dSpike']
-        #    * 1e-3
-        #    * self.sim_params["dt"]
-        #)
+        dSpike_prob[timer_mask] = 1 #np.exp(- delta_t / 1000)
 
         random_ind_prob = (PPs == i)
 
@@ -95,11 +122,12 @@ class PlaceFieldFormation(BaseModel):
 def full_activity(rep_id, repititions):
     t = repititions[rep_id]
 
-    fig, axes = plt.subplots(10, 16, figsize=(40, 20))
+    fig, axes = plt.subplots(10, 10, figsize=(20, 20))
     for i in range(10):
-        for j in range(16):
-            axes[i, j].set_ylim([0,50])
-            axes[i, j].plot(50 * t['f'][j * 10 + i])
+        for j in range(10):
+            axes[i, j].set_ylim([0,1])
+            #axes[i, j].plot(50 * t['f'][j * 10 + i])
+            axes[i, j].plot(t['f'][j * 10 + i])
             PP_loc = t['PP_onset'][j * 10 + i]
             for time in np.where(PP_loc == 1)[0]:
                 axes[i, j].axvline(x=time, c='red')
@@ -145,13 +173,13 @@ if __name__ == "__main__":
         "up_cross_dur": 0,  # ms
         "w_prox_max": 0.5,
         "w_prox_min": 0.0,
+        'delta_w': 1e-1,
         "theta": 1,
         "r_PP": 3,
         "p_dSpike": 1 / 25,
         'w_sum': 2,
-        'delta_w': 0.005,
-        'dSpike_thres_high': 0.2,
-        'dSpike_thres_low': 0.1
+        'dSpike_thres_high': 0.5,
+        'dSpike_thres_low': 0.2
     }
     sim_params = {
         "dt": 1,  # in ms
@@ -160,10 +188,10 @@ if __name__ == "__main__":
         "stim_dur": 200,  # in ms
         "num_pats": 20,  # number of input patterns
         "frac_input": 0.5,
-        "input_rate": 35,
+        "input_rate": 10,
     }
 
-    num_neurons = 160
+    num_neurons = 100
 
     num_inputs = 500
 
@@ -172,50 +200,14 @@ if __name__ == "__main__":
     )
     state = {}
 
-    repititions = 1
+    steps = neuron.create_inputs()
+    nums = 2
 
-    representations = []
-    f = lambda x, mu, sigma: np.exp(-((x - mu) ** 2) / 2 / sigma**2)
-
-    len_stim = 50
-    min_shift = 5
-
-    steps = num_inputs // min_shift
-
-    inp_space = np.linspace(0, len_stim - 1, len_stim)
-    inp = f(inp_space, len_stim // 2, len_stim // 4) * 1.5
-
-    sim_params.update({"num_pats": steps})
-
-    neuron.sim_params["num_pats"] = steps
-    neuron.input_neurons = np.zeros(
-        (neuron.sim_params["num_pats"], neuron.num_inp)
-    )
-
-    for i in range(steps):
-
-        if len_stim + min_shift * i < num_inputs:
-            neuron.input_neurons[i][
-                min_shift * i : len_stim + min_shift * i
-            ] = inp
-        else:
-            wrapped_idx = (len_stim + min_shift * i) % num_inputs
-            neuron.input_neurons[i][min_shift * i : -1] = inp[
-                : num_inputs - min_shift * i - 1
-            ]
-            neuron.input_neurons[i][:wrapped_idx] = inp[
-                num_inputs - min_shift * i - 1 : -1
-            ]
-    
-    neuron.input_neurons = np.roll(neuron.input_neurons, axis=1, shift=-len_stim // 2)
-
-    repititions = []
-
-    nums = 5
-
-    time_steps = sim_params['stim_dur'] * steps
+    time_steps = neuron.sim_params['stim_dur'] * steps
 
     PPs = np.random.choice(time_steps, num_neurons)
+
+    repititions = []
 
     for i in range(nums):
 
@@ -223,17 +215,18 @@ if __name__ == "__main__":
             state, t1 = neuron.run(
                 learning=False, state=state, recording=True
             )
-            state, t1 = neuron.run(
+            state, traces = neuron.run(
                 learning=True, state=state, recording=True, context_args={'PPs': PPs}
             )
-            state, traces = neuron.run(
-                learning=False, state=state, recording=True
-            )
         else:
-            state = neuron.run_passive(state, 3 * int(1e4))
+            #state = neuron.run_passive(state, 3 * int(1e4))
             state, traces = neuron.run(
                 learning=True, state=state, recording=True, context_args={'self_gen': True}
             )
+        state, traces = neuron.run(
+            learning=False, state=state, recording=True
+        )
+
 
         traces['w_prox'] = state['w_prox'].copy()
 
@@ -257,7 +250,7 @@ if __name__ == "__main__":
                     f_list[:, pat_start : pat_start + width],
                     axis=1,
                 )
-                * 50
+                #* 50
             )
             reps.append(rep)
 
@@ -271,10 +264,11 @@ if __name__ == "__main__":
     for rep_id in range(nums):
         full_activity(rep_id, repititions)
 
-        plt.savefig(f'place_field_consolidation/full_{rep_id}.png')
+        plt.savefig(f'figs/full_{rep_id}.png')
         plt.close()
         
     vmax = 50
+    vmax = 1
 
     fig, axes = plt.subplots(nums, nums, figsize=(20, 20))
 
@@ -286,8 +280,4 @@ if __name__ == "__main__":
                 axes[i, j].imshow(results[i].T[sorting[j]], vmin=0, vmax=vmax)
 
 
-    plt.savefig("place_field_consolidation/consolitdation.png")
-
-    import IPython
-    IPython.embed()
-    quit()
+    plt.savefig("figs/consolitdation.png")
