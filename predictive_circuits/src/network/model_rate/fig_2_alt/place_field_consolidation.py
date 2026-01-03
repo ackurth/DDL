@@ -182,12 +182,11 @@ if __name__ == "__main__":
         "theta": 1,
         "r_PP": 3,
         "p_dSpike": 1 / 25,
-        'w_sum': 2,
-        #'delta_w': 0.002,
-        'delta_w': 0.003,
+        'w_sum': 4,
+        'delta_w': 0.005,
         'dSpike_thres_high': 0.4,
         'dSpike_thres_low': 0.2,
-        'norm': False
+        'norm': True 
     }
     sim_params = {
         "dt": 1,  # in ms
@@ -209,7 +208,7 @@ if __name__ == "__main__":
     state = {}
 
     steps = neuron.create_inputs()
-    nums = 3
+    nums = 2
 
     time_steps = neuron.sim_params['stim_dur'] * steps
 
@@ -266,6 +265,9 @@ if __name__ == "__main__":
         results.append(res)
         m = np.argsort(np.argmax(res, axis=0))
         sorting.append(m)
+        
+        repititions[i]['rate_avg'] = res
+        repititions[i]['sorting'] = m
 
     rep_id = 0
 
@@ -288,7 +290,98 @@ if __name__ == "__main__":
 
 
     plt.savefig("fig/consolitdation.png")
+    
+    with open('data/consolitdation.pkl', 'wb') as f:
+        pickle.dump(repititions, f)
+    
+    neuron = PlaceFieldFormation(
+        num_neurons, num_inputs, neuron_params, sim_params, rng
+    )
+    state = {}
 
-    import IPython
-    IPython.embed()
-    quit()
+    steps = neuron.create_inputs()
+    nums = 2
+
+    time_steps = neuron.sim_params['stim_dur'] * steps
+
+    PP_1 = np.random.choice(time_steps, num_neurons)
+    PP_2 = np.random.choice(time_steps, num_neurons)
+
+    repititions = []
+
+    for i in range(nums):
+
+        if i  == 0:
+            state, t1 = neuron.run(
+                learning=False, state=state, recording=True
+            )
+            state, traces = neuron.run(
+                learning=True, state=state, recording=True, context_args={'PPs': PP_1}
+            )
+        else:
+            state, traces = neuron.run(
+                learning=True, state=state, recording=True, context_args={'PPs': PP_2}
+            )
+        state, traces = neuron.run(
+            learning=False, state=state, recording=True
+        )
+
+
+        traces['w_prox'] = state['w_prox'].copy()
+
+        repititions.append(traces)
+
+    results = []
+    sorting = []
+    for i in range(nums):
+
+        traces = repititions[i]
+
+        f_list = traces["f"]
+        pat_idx = traces["pat_idx"]
+        pat_start_idx = traces["pat_start_idx"]
+        width = int(sim_params['stim_dur'] / sim_params['dt'])
+
+        reps = []
+        for id, pat_start in zip(pat_idx, pat_start_idx):
+            rep = (
+                np.mean(
+                    f_list[:, pat_start : pat_start + width],
+                    axis=1,
+                )
+                * 50
+            )
+            reps.append(rep)
+
+        res = np.asarray(reps)
+        results.append(res)
+        m = np.argsort(np.argmax(res, axis=0))
+        sorting.append(m)
+
+        repititions[i]['rate_avg'] = res
+        repititions[i]['sorting'] = m
+
+    rep_id = 0
+
+    for rep_id in range(nums):
+        full_activity(rep_id, repititions)
+
+        plt.savefig(f'fig/full_{rep_id}.png')
+        plt.close()
+        
+    vmax = 50
+
+    fig, axes = plt.subplots(nums, nums, figsize=(20, 20))
+
+    for i in range(0, nums):
+        for j in range(0, nums):
+            if j > i:
+                axes[i, j].remove()
+            else:
+                axes[i, j].imshow(results[i].T[sorting[j]], vmin=0, vmax=vmax)
+
+
+    plt.savefig("fig/remapping.png")
+
+    with open('data/remapping.pkl', 'wb') as f:
+        pickle.dump(repititions, f)
