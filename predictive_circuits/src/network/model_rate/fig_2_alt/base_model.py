@@ -111,7 +111,10 @@ class BaseModel:
     def record(self, i):
         self.container["f"][:, i] = self.f
         self.container["V_prox"][:, i] = self.V_prox
-        self.container["PP_onset"][:, i] = self.PP_onset
+        self.container["PP_onset"][:, i] = self.PP_onset.copy()
+
+        if self.PP_onset.sum():
+            print('hi')
 
     def run(
         self, state={}, learning=True, recording=False, context_args={}, input_params={}
@@ -174,11 +177,11 @@ class BaseModel:
             # dSpike
             self.mask_cross_low = ((f_prev < self.neuron_params['dSpike_thres_low'])
                                    * (self.neuron_params['dSpike_thres_low'] < self.f)
-                                   * ~self.mask_cross_low)
+                                   * (self.cross_low == 0))
 
             self.mask_cross_high = ((f_prev < self.neuron_params['dSpike_thres_high'])
                                     * (self.neuron_params['dSpike_thres_high'] < self.f)
-                                    * ~self.mask_cross_high)
+                                    * (self.cross_high == 0))
 
             self.cross_low[self.mask_cross_low] = i
             self.cross_high[self.mask_cross_high] = i
