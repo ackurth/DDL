@@ -240,16 +240,16 @@ class BaseModel:
                 self.record(i)
 
         state = {
-            "I_syn_prox": self.I_syn_prox,
-            "PSP_prox": self.PSP_prox,
-            "V}}_prox": self.V_prox,
-            "up_cross_counter": self.up_cross_counter,
-            "pp_refac_counter": self.pp_refac_counter,
-            "w_prox": self.w_prox,
-            "IS_1": self.IS_1,
-            "IS_2": self.IS_2,
-            "ET_1": self.ET_1,
-            "ET_2": self.ET_2,
+            "I_syn_prox": self.I_syn_prox.copy(),
+            "PSP_prox": self.PSP_prox.copy(),
+            "V}}_prox": self.V_prox.copy(),
+            "up_cross_counter": self.up_cross_counter.copy(),
+            "pp_refac_counter": self.pp_refac_counter.copy(),
+            "w_prox": self.w_prox.copy(),
+            "IS_1": self.IS_1.copy(),
+            "IS_2": self.IS_2.copy(),
+            "ET_1": self.ET_1.copy(),
+            "ET_2": self.ET_2.copy(),
         }
 
         if recording:

@@ -222,13 +222,13 @@ if __name__ == "__main__":
             state, t1 = neuron.run(
                 learning=False, state=state, recording=True
             )
-            state, traces = neuron.run(
+            state_after_0, traces = neuron.run(
                 learning=True, state=state, recording=True, context_args={'PPs': PPs}
             )
         else:
             #state = neuron.run_passive(state, 3 * int(1e4))
             state, traces = neuron.run(
-                learning=True, state=state, recording=True, context_args={'self_gen': True}
+                learning=True, state=state_after_0, recording=True, context_args={'self_gen': True}
             )
         state, traces = neuron.run(
             learning=False, state=state, recording=True
@@ -307,20 +307,24 @@ if __name__ == "__main__":
     PP_1 = np.random.choice(time_steps, num_neurons)
     PP_2 = np.random.choice(time_steps, num_neurons)
 
+    temp = repititions[0]
+    
     repititions = []
+    repititions.append(temp)
 
-    for i in range(nums):
+    for i in range(1, nums):
 
         if i  == 0:
             state, t1 = neuron.run(
                 learning=False, state=state, recording=True
             )
-            state, traces = neuron.run(
+            state_after_0, traces = neuron.run(
                 learning=True, state=state, recording=True, context_args={'PPs': PP_1}
             )
+
         else:
             state, traces = neuron.run(
-                learning=True, state=state, recording=True, context_args={'PPs': PP_2}
+                learning=True, state=state_after_0, recording=True, context_args={'PPs': PP_2}
             )
         state, traces = neuron.run(
             learning=False, state=state, recording=True
