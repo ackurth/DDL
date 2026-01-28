@@ -41,8 +41,11 @@ class BaseModel:
         
         self.PP_onset = state.get("PP_onset", np.zeros(self.num_neurons, dtype=bool))
 
-        self.mask_cross_low = state.get("mask_cross_low", np.zeros(self.num_neurons, dtype=bool))
-        self.mask_cross_high = state.get("mask_cross_high", np.zeros(self.num_neurons, dtype=bool))
+        #self.mask_cross_low = state.get("mask_cross_low", np.zeros(self.num_neurons, dtype=bool))
+        #self.mask_cross_high = state.get("mask_cross_high", np.zeros(self.num_neurons, dtype=bool))
+        
+        self.mask_cross_low = np.zeros(self.num_neurons, dtype=bool)
+        self.mask_cross_high = np.zeros(self.num_neurons, dtype=bool)
 
         self.cross_low = np.zeros(self.num_neurons)
         self.cross_high = np.zeros(self.num_neurons)
@@ -63,17 +66,9 @@ class BaseModel:
         self.IS_2 = state.get("IS_2", np.zeros(self.num_neurons))
 
         # Fetch of alternative initialize proximal feedforward and recurrent weights
-
         self.w_prox = state.get(
             "w_prox",
             (
-                #np.abs(
-                #    self.rng.standard_normal(
-                #        size=(self.num_neurons, self.num_inp)
-                #    )
-                #)
-                #/ self.num_inp
-
                 self.rng.normal(self.neuron_params['w_sum'] / self.num_inp,
                                 self.neuron_params['w_sum'] / self.num_inp / 2,
                                 size=(self.num_neurons, self.num_inp)
@@ -89,6 +84,8 @@ class BaseModel:
     def generate_container(self, time_steps):
         self.container = {
             "f": np.zeros((self.num_neurons, time_steps)),
+            "cross_low": np.zeros((self.num_neurons, time_steps)),
+            "cross_high": np.zeros((self.num_neurons, time_steps)),
             "spks": np.zeros((self.num_neurons, time_steps)),
             "V_prox": np.zeros((self.num_neurons, time_steps)),
             "PP_onset": np.zeros((self.num_neurons, time_steps)),
@@ -104,20 +101,22 @@ class BaseModel:
 
     def process_misc(self, misc, i):
         pass
+    
+    def process_misc_after(self, misc_after):
+        pass
 
     def PP_generation(self, context_args):
         pass
 
     def record(self, i):
-        self.container["f"][:, i] = self.f
-        self.container["V_prox"][:, i] = self.V_prox
+        self.container["f"][:, i] = self.f.copy()
+        self.container["V_prox"][:, i] = self.V_prox.copy()
         self.container["PP_onset"][:, i] = self.PP_onset.copy()
-
-        if self.PP_onset.sum():
-            print('hi')
+        self.container["cross_low"][:, i] = self.cross_low.copy()
+        self.container["cross_high"][:, i] = self.cross_high.copy()
 
     def run(
-        self, state={}, learning=True, recording=False, context_args={}, input_params={}
+        self, state={}, learning=True, recording=False, context_args={}, input_params={}, misc_after={}
     ):
 
 
@@ -132,12 +131,13 @@ class BaseModel:
 
         up_cross = np.zeros(self.num_neurons, dtype=bool)
         down_cross = np.zeros(self.num_neurons, dtype=bool)
+        
+        self.cross_low = np.zeros(self.num_neurons)
+        self.cross_high = np.zeros(self.num_neurons)
 
         for (i, p_rand_prox, misc) in tqdm(self.input(**input_params), desc="[running]"):
 
             self.PPs *= False
-
-            self.process_misc(misc, i)
 
             # Sample input
             spike_vec_prox = self.rng.random(self.num_inp) < p_rand_prox
@@ -176,16 +176,14 @@ class BaseModel:
 
             # dSpike
             self.mask_cross_low = ((f_prev < self.neuron_params['dSpike_thres_low'])
-                                   * (self.neuron_params['dSpike_thres_low'] < self.f)
-                                   * (self.cross_low == 0))
+                                   * (self.neuron_params['dSpike_thres_low'] < self.f))
 
             self.mask_cross_high = ((f_prev < self.neuron_params['dSpike_thres_high'])
-                                    * (self.neuron_params['dSpike_thres_high'] < self.f)
-                                    * (self.cross_high == 0))
-
+                                    * (self.neuron_params['dSpike_thres_high'] < self.f))
+        
             self.cross_low[self.mask_cross_low] = i
             self.cross_high[self.mask_cross_high] = i
-
+            
             self.PP_generation(i, **context_args)
 
             mask = self.PPs * (self.pp_refac_counter == 0)
@@ -242,10 +240,13 @@ class BaseModel:
             if recording:
                 self.record(i)
 
+
+            self.process_misc(misc, i)
+
         state = {
             "I_syn_prox": self.I_syn_prox.copy(),
             "PSP_prox": self.PSP_prox.copy(),
-            "V}}_prox": self.V_prox.copy(),
+            "V_prox": self.V_prox.copy(),
             "up_cross_counter": self.up_cross_counter.copy(),
             "pp_refac_counter": self.pp_refac_counter.copy(),
             "w_prox": self.w_prox.copy(),
@@ -254,6 +255,8 @@ class BaseModel:
             "ET_1": self.ET_1.copy(),
             "ET_2": self.ET_2.copy(),
         }
+
+        self.process_misc_after(misc_after=misc_after)
 
         if recording:
             return state, self.container
