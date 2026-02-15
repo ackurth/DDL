@@ -69,15 +69,19 @@ class BaseModel:
         self.w_prox = state.get(
             "w_prox",
             (
-                self.rng.normal(self.neuron_params['w_sum'] / self.num_inp,
-                                self.neuron_params['w_sum'] / self.num_inp / 2,
+                self.rng.normal(2 / self.num_inp,
+                                2 / self.num_inp / 2,
                                 size=(self.num_neurons, self.num_inp)
                                 )
             ),
         )
         self.w_prox[self.w_prox < 0] = 0
         if self.neuron_params['norm']:
-            self.w_prox /= self.w_prox.sum(axis=1)[:, np.newaxis] / self.neuron_params['w_sum']
+            self.w_prox = self._weigth_norm(self.w_prox)
+
+    def _weigth_norm(self, w_prox):
+        return w_prox / (self.w_prox.sum(axis=1)[:, np.newaxis] / self.neuron_params['w_sum'])
+
 
     def generate_container(self, time_steps):
         self.container = {
@@ -179,7 +183,7 @@ class BaseModel:
 
             self.mask_cross_high = ((f_prev < self.neuron_params['dSpike_thres_high'])
                                     * (self.neuron_params['dSpike_thres_high'] < self.f))
-        
+
             self.cross_low[self.mask_cross_low] = i
             self.cross_high[self.mask_cross_high] = i
             
@@ -231,7 +235,7 @@ class BaseModel:
                 )
             
             if self.neuron_params['norm']:
-                self.w_prox /= self.w_prox.sum(axis=1)[:, np.newaxis] / self.neuron_params['w_sum'] 
+                self.w_prox = self._weigth_norm(self.w_prox)
 
             self.pp_refac_counter[self.pp_refac_counter > 0] -= 1
             self.up_cross_counter[self.up_cross_counter > 0] -= 1

@@ -49,8 +49,14 @@ class Attention(BaseModel):
     
 
     def run_passive(self, state, timesteps=0, traces=None):
+        PP_mask = traces['PP_onset'].sum(axis=1) >= 1
+
+        tau = np.ones(self.num_neurons)
+        tau[PP_mask] *= 1.6
+
         w_prox = state['w_prox'].copy()
-        w_prox = (1  - np.exp(- timesteps / tau)) * self.neuron_params['w_sum'] / self.num_inp + np.exp(- timesteps / tau) * w_prox
+        #w_prox = (1  - np.exp(- timesteps / tau)) * self.neuron_params['w_sum'] / self.num_inp + np.exp(- timesteps / tau) * w_prox
+        w_prox = (1  - np.exp(- timesteps / tau))[:, np.newaxis] * self.neuron_params['w_sum'] / self.num_inp + np.exp(- timesteps / tau)[:, np.newaxis] * w_prox
         w_prox += self.rng.normal(0, self.neuron_params['w_sum'] / self.num_inp / 2, size=(self.num_neurons, self.num_inp))
         w_prox[self.w_prox < 0] = 0
 
@@ -74,7 +80,7 @@ class Attention(BaseModel):
         self.PP_attempt = timer_mask * delta_t_mask * (self.pp_refac_counter == 0)
 
         dSpike_prob = np.zeros(self.num_neurons)
-        dSpike_prob[self.PP_attempt] = 0
+        dSpike_prob[self.PP_attempt] = self.neuron_params['dSpike_prob']
 
         self.cross_low[timer_mask] = 0
         self.cross_high[timer_mask] = 0
@@ -146,9 +152,9 @@ if __name__ == "__main__":
     rng = np.random.default_rng()
 
 
-    num_neurons = 600
+    num_neurons = 200
 
-    num_pcs = 600
+    num_pcs = 100
 
     neuron_params = {
         "g_d_prox": 1.0,
@@ -172,9 +178,10 @@ if __name__ == "__main__":
         "r_PP": 3,
         'w_sum': 4,
         'delta_w': 0.005,
-        'dSpike_thres_high': 0.175,
+        'dSpike_thres_high': 0.2,
         'dSpike_thres_low': 0.1,
         'norm': True,
+        'dSpike_prob': 0.8
     }
     sim_params = {
         "dt": 1,  # in ms
@@ -216,16 +223,15 @@ if __name__ == "__main__":
     PP_times = np.random.choice(time_steps, num_pcs)
     PPs[rnd_neurons] = PP_times
 
-    repititions = []
-
     neurons_with_PC = []
     neurons_with_random_PC = []
     neurons_with_PC.append(rnd_neurons)
     neurons_with_random_PC.append(rnd_neurons)
 
-    nums = 20
+    nums = 15
 
-    repititions = []
+    day_1 = []
+    neurons_with_PC = []
     for i in range(nums):
 
         tau = 1.
@@ -234,18 +240,89 @@ if __name__ == "__main__":
             state, traces = neuron.run(
                 learning=True, state=state, recording=True, context_args={'PPs': PPs}, input_params=input_params
             )
+            state, traces = neuron.run(
+                learning=True, state=state, recording=True, context_args={'self_gen': True}, input_params=input_params
+            )
             
             neuron.behaviour = True
-
         else:
             state, traces = neuron.run(
-                learning=False, state=state, recording=True, context_args={'self_gen': False}, input_params=input_params
+                learning=False, state=state, recording=True, context_args={}, input_params=input_params
             )
 
-        repititions.append(traces)
+        day_1.append(traces)
+
+    errs_1 = []
+
+    for i in range(1, nums):
+        errs_1.append(((reward_2_stream - day_1[i]['behaviour']) ** 2).mean())
+    
+    
+    day_2 = []
+    neurons_with_PC = []
+    for i in range(nums):
+
+        if i  == 0:
+            neuron.behaviour = False
+            neuron.neuron_params['dSpike_prob'] = 0.1
+            state, traces = neuron.run(
+                learning=True, state=state, recording=True, context_args={'self_gen': True}, input_params=input_params
+            )
+            PP_mask = traces['PP_onset'].sum(axis=1) >= 1
+            num_neurons_with_surviving_RF = PP_mask.sum()
+            print(num_neurons_with_surviving_RF)
+
+            state["w_prox"][~PP_mask] = rng.normal(neuron_params['w_sum'] / num_inputs,
+                                neuron_params['w_sum'] / num_inputs / 2,
+                                size=((~PP_mask).sum(),num_inputs)
+                                )
+            state["w_prox"][state["w_prox"] < 0] = 0
+            if neuron_params['norm']:
+                state["w_prox"] /= state["w_prox"].sum(axis=1)[:, np.newaxis] / neuron_params['w_sum']
+
+
+
+            PPs = -1 * np.ones(num_neurons)
+            
+            elig_mask = np.ones(num_neurons, dtype=bool)
+            elig_mask[PP_mask] = False
+            rnd_neurons = np.random.choice(np.arange(0, num_neurons, dtype=int)[elig_mask], num_pcs - num_neurons_with_surviving_RF, replace=False)
+            
+            PP_times = np.random.choice(time_steps, num_pcs - num_neurons_with_surviving_RF)
+            PPs[rnd_neurons] = PP_times
+            
+            neuron.neuron_params['dSpike_prob'] = 0.8
+            
+            state, traces = neuron.run(
+                learning=True, state=state, recording=True, context_args={'PPs': PPs}, input_params=input_params
+            )
+            state, traces = neuron.run(
+                learning=True, state=state, recording=True, context_args={'self_gen': True}, input_params=input_params
+            )
+            neuron.behaviour = True
+        else:
+            state, traces = neuron.run(
+                learning=False, state=state, recording=True, context_args={}, input_params=input_params
+            )
+
+        day_2.append(traces)
+
+    errs_2 = []
+
+    for i in range(1, nums):
+        errs_2.append(((reward_2_stream - day_2[i]['behaviour']) ** 2).mean())
+
+    plt.close()
+    plt.figure()
+    plt.plot(errs_1)
+    plt.plot(errs_2)
+    plt.show()
+    plt.close()
 
     import IPython
     IPython.embed()
     
-    with open('data/attention.pkl', 'wb') as f:
-        pickle.dump(repititions, f)
+    with open('data/attention_random_day_1.pkl', 'wb') as f:
+        pickle.dump(day_1, f)
+    with open('data/attention_random_day_2.pkl', 'wb') as f:
+        pickle.dump(day_2, f)
